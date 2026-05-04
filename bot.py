@@ -87,7 +87,8 @@ async def _wait_for_vm_status(target: str):
 async def _start_and_notify(channel: discord.TextChannel):
     await _wait_for_vm_status("RUNNING")
     ip = await asyncio.to_thread(_get_ip)
-    await channel.send("VM is up! Waiting for Minecraft to start...")
+    await channel.send("VM is up! Starting Minecraft...")
+    await asyncio.to_thread(_start_mc)
     await _wait_for_port(ip, open=True)
     await channel.send(f"Minecraft server is ready! Connect to: **{ip}**")
 
