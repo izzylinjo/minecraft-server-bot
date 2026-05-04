@@ -98,6 +98,18 @@ async def _stop_and_notify(channel: discord.TextChannel):
     await channel.send("Server is fully offline.")
 
 
+async def _wait_mc_and_notify(channel: discord.TextChannel):
+    ip = await asyncio.to_thread(_get_ip)
+    await _wait_for_port(ip, open=True)
+    await channel.send(f"Minecraft server is ready! Connect to: **{ip}**")
+
+
+async def _wait_mc_stop_and_notify(channel: discord.TextChannel):
+    ip = await asyncio.to_thread(_get_ip)
+    await _wait_for_port(ip, open=False)
+    await channel.send("Minecraft server stopped. VM is still running.")
+
+
 async def _restart_and_notify(channel: discord.TextChannel):
     ip = await asyncio.to_thread(_get_ip)
     await _wait_for_port(ip, open=False)
@@ -105,6 +117,38 @@ async def _restart_and_notify(channel: discord.TextChannel):
     await asyncio.to_thread(_start_mc)
     await _wait_for_port(ip, open=True)
     await channel.send(f"Minecraft server is back up! Connect to: **{ip}**")
+
+
+@tree.command(name="startmc", description="Start only the Minecraft server (VM must already be on)")
+async def startmc(interaction: discord.Interaction):
+    await interaction.response.defer()
+    status = await asyncio.to_thread(_get_status)
+    if status != "RUNNING":
+        await interaction.followup.send("VM is not running. Use /startserver first.")
+        return
+    ip = await asyncio.to_thread(_get_ip)
+    if await asyncio.to_thread(_port_open, ip, MC_PORT):
+        await interaction.followup.send("Minecraft is already running.")
+        return
+    await asyncio.to_thread(_start_mc)
+    await interaction.followup.send("Starting Minecraft server...")
+    asyncio.create_task(_wait_mc_and_notify(interaction.channel))
+
+
+@tree.command(name="stopmc", description="Stop only the Minecraft server (VM stays on)")
+async def stopmc(interaction: discord.Interaction):
+    await interaction.response.defer()
+    status = await asyncio.to_thread(_get_status)
+    if status != "RUNNING":
+        await interaction.followup.send("VM is not running.")
+        return
+    ip = await asyncio.to_thread(_get_ip)
+    if not await asyncio.to_thread(_port_open, ip, MC_PORT):
+        await interaction.followup.send("Minecraft is already stopped.")
+        return
+    await asyncio.to_thread(_stop_mc)
+    await interaction.followup.send("Stopping Minecraft server... waiting for it to save.")
+    asyncio.create_task(_wait_mc_stop_and_notify(interaction.channel))
 
 
 @tree.command(name="startserver", description="Start the Minecraft server VM")
