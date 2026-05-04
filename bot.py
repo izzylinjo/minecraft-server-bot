@@ -203,7 +203,22 @@ async def command(interaction: discord.Interaction, cmd: str):
 async def serverstatus(interaction: discord.Interaction):
     await interaction.response.defer()
     status = await asyncio.to_thread(_get_status)
-    await interaction.followup.send(f"Server status: **{status}**")
+    await interaction.followup.send(f"VM status: **{status}**")
+
+
+@tree.command(name="mcstatus", description="Check if the Minecraft server is running")
+async def mcstatus(interaction: discord.Interaction):
+    await interaction.response.defer()
+    vm_status = await asyncio.to_thread(_get_status)
+    if vm_status != "RUNNING":
+        await interaction.followup.send("Minecraft server is **offline** (VM is not running).")
+        return
+    ip = await asyncio.to_thread(_get_ip)
+    up = await asyncio.to_thread(_port_open, ip, MC_PORT)
+    if up:
+        await interaction.followup.send(f"Minecraft server is **online**! Connect to: **{ip}**")
+    else:
+        await interaction.followup.send("VM is running but Minecraft is **offline**.")
 
 
 @client.event
