@@ -50,7 +50,10 @@ def _ssh(command):
 
 
 def _stop_mc():
-    _ssh("sudo screen -S minecraft -X stuff $'stop\\n'")
+    try:
+        _ssh("sudo screen -S minecraft -X stuff $'stop\\n'")
+    except subprocess.CalledProcessError:
+        pass  # session not found means MC is already stopped
 
 
 def _start_mc():
