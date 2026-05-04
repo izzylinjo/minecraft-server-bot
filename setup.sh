@@ -13,6 +13,7 @@ Description=Minecraft Discord Bot
 After=network.target
 
 [Service]
+User=$(whoami)
 WorkingDirectory=$(pwd)
 ExecStart=$(pwd)/venv/bin/python $(pwd)/bot.py
 Restart=always
