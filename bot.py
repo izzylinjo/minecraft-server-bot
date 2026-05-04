@@ -57,7 +57,7 @@ def _stop_mc():
 
 
 def _start_mc():
-    _ssh("cd /opt/minecraft && sudo screen -dmS minecraft ./run.sh")
+    _ssh("cd /opt/minecraft && sudo screen -dmS minecraft ./run.sh nogui")
 
 
 def _port_open(ip, port):
