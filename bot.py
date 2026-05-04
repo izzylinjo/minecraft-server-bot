@@ -187,6 +187,18 @@ async def restartserver(interaction: discord.Interaction):
     asyncio.create_task(_restart_and_notify(interaction.channel))
 
 
+@tree.command(name="command", description="Run a command on the Minecraft server console")
+@app_commands.describe(cmd="The Minecraft command to run (without the /)")
+async def command(interaction: discord.Interaction, cmd: str):
+    await interaction.response.defer()
+    status = await asyncio.to_thread(_get_status)
+    if status != "RUNNING":
+        await interaction.followup.send("Server is not running.")
+        return
+    await asyncio.to_thread(_ssh, f"screen -S minecraft -X stuff $'{cmd}\\n'")
+    await interaction.followup.send(f"Ran command: `{cmd}`")
+
+
 @tree.command(name="serverstatus", description="Check the Minecraft server VM status")
 async def serverstatus(interaction: discord.Interaction):
     await interaction.response.defer()
