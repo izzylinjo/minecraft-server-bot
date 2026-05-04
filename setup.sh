@@ -3,7 +3,9 @@ set -e
 
 read -p "Enter your Discord bot token: " TOKEN
 echo "DISCORD_TOKEN=$TOKEN" > .env
-pip3 install -r requirements.txt
+
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
 
 sudo tee /etc/systemd/system/minecraft-bot.service > /dev/null <<EOF
 [Unit]
@@ -12,7 +14,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=$(pwd)
-ExecStart=$(which python3) $(pwd)/bot.py
+ExecStart=$(pwd)/venv/bin/python $(pwd)/bot.py
 Restart=always
 RestartSec=5
 
