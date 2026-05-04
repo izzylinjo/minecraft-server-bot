@@ -3,7 +3,7 @@ set -e
 
 read -p "Enter your Discord bot token: " TOKEN
 echo "DISCORD_TOKEN=$TOKEN" > .env
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 
 sudo tee /etc/systemd/system/minecraft-bot.service > /dev/null <<EOF
 [Unit]
