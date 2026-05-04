@@ -1,6 +1,7 @@
 import asyncio
 import os
 import socket
+import subprocess
 
 import discord
 from discord import app_commands
@@ -32,12 +33,28 @@ def _get_ip():
     return _get_instance().network_interfaces[0].access_configs[0].nat_i_p
 
 
-def _start():
+def _start_vm():
     instances_client.start(project=PROJECT, zone=ZONE, instance=INSTANCE)
 
 
-def _stop():
+def _stop_vm():
     instances_client.stop(project=PROJECT, zone=ZONE, instance=INSTANCE)
+
+
+def _ssh(command):
+    subprocess.run([
+        "gcloud", "compute", "ssh", INSTANCE,
+        f"--zone={ZONE}", f"--project={PROJECT}",
+        f"--command={command}", "--quiet"
+    ], check=True)
+
+
+def _stop_mc():
+    _ssh("screen -S minecraft -X stuff 'stop\n'")
+
+
+def _start_mc():
+    _ssh("cd /opt/minecraft && screen -dmS minecraft ./run.sh")
 
 
 def _port_open(ip, port):
@@ -48,23 +65,46 @@ def _port_open(ip, port):
         return False
 
 
-async def _notify_when_ready(channel: discord.TextChannel):
+async def _wait_for_port(ip, open: bool):
+    while True:
+        result = await asyncio.to_thread(_port_open, ip, MC_PORT)
+        if result == open:
+            break
+        await asyncio.sleep(5)
+
+
+async def _wait_for_vm_status(target: str):
     while True:
         status = await asyncio.to_thread(_get_status)
-        if status == "RUNNING":
+        if status == target:
             break
         await asyncio.sleep(5)
 
+
+async def _start_and_notify(channel: discord.TextChannel):
+    await _wait_for_vm_status("RUNNING")
     ip = await asyncio.to_thread(_get_ip)
-    await channel.send(f"VM is up! Waiting for Minecraft to start...")
-
-    while True:
-        ready = await asyncio.to_thread(_port_open, ip, MC_PORT)
-        if ready:
-            break
-        await asyncio.sleep(5)
-
+    await channel.send("VM is up! Waiting for Minecraft to start...")
+    await _wait_for_port(ip, open=True)
     await channel.send(f"Minecraft server is ready! Connect to: **{ip}**")
+
+
+async def _stop_and_notify(channel: discord.TextChannel):
+    ip = await asyncio.to_thread(_get_ip)
+    await _wait_for_port(ip, open=False)
+    await channel.send("Minecraft stopped. Shutting down VM...")
+    await asyncio.to_thread(_stop_vm)
+    await _wait_for_vm_status("TERMINATED")
+    await channel.send("Server is fully offline.")
+
+
+async def _restart_and_notify(channel: discord.TextChannel):
+    ip = await asyncio.to_thread(_get_ip)
+    await _wait_for_port(ip, open=False)
+    await channel.send("Minecraft stopped. Starting it back up...")
+    await asyncio.to_thread(_start_mc)
+    await _wait_for_port(ip, open=True)
+    await channel.send(f"Minecraft server is back up! Connect to: **{ip}**")
 
 
 @tree.command(name="startserver", description="Start the Minecraft server VM")
@@ -74,20 +114,33 @@ async def startserver(interaction: discord.Interaction):
     if status == "RUNNING":
         await interaction.followup.send("Server is already running.")
         return
-    await asyncio.to_thread(_start)
+    await asyncio.to_thread(_start_vm)
     await interaction.followup.send("Starting server...")
-    asyncio.create_task(_notify_when_ready(interaction.channel))
+    asyncio.create_task(_start_and_notify(interaction.channel))
 
 
-@tree.command(name="stopserver", description="Stop the Minecraft server VM")
+@tree.command(name="stopserver", description="Stop the Minecraft server and VM")
 async def stopserver(interaction: discord.Interaction):
     await interaction.response.defer()
     status = await asyncio.to_thread(_get_status)
     if status == "TERMINATED":
         await interaction.followup.send("Server is already stopped.")
         return
-    await asyncio.to_thread(_stop)
-    await interaction.followup.send("Stopping server...")
+    await asyncio.to_thread(_stop_mc)
+    await interaction.followup.send("Stopping Minecraft server... waiting for it to save.")
+    asyncio.create_task(_stop_and_notify(interaction.channel))
+
+
+@tree.command(name="restartserver", description="Restart the Minecraft server (VM stays on)")
+async def restartserver(interaction: discord.Interaction):
+    await interaction.response.defer()
+    status = await asyncio.to_thread(_get_status)
+    if status != "RUNNING":
+        await interaction.followup.send("VM is not running. Use /startserver first.")
+        return
+    await asyncio.to_thread(_stop_mc)
+    await interaction.followup.send("Restarting Minecraft server...")
+    asyncio.create_task(_restart_and_notify(interaction.channel))
 
 
 @tree.command(name="serverstatus", description="Check the Minecraft server VM status")
