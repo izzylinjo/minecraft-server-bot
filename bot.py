@@ -50,7 +50,7 @@ def _ssh(command):
 
 
 def _stop_mc():
-    _ssh("screen -S minecraft -X stuff 'stop\n'")
+    _ssh("screen -S minecraft -X stuff $'stop\\n'")
 
 
 def _start_mc():
