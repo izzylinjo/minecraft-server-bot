@@ -50,11 +50,11 @@ def _ssh(command):
 
 
 def _stop_mc():
-    _ssh("screen -S minecraft -X stuff $'stop\\n'")
+    _ssh("sudo screen -S minecraft -X stuff $'stop\\n'")
 
 
 def _start_mc():
-    _ssh("cd /opt/minecraft && screen -dmS minecraft ./run.sh")
+    _ssh("cd /opt/minecraft && sudo screen -dmS minecraft ./run.sh")
 
 
 def _port_open(ip, port):
