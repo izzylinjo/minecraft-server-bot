@@ -49,6 +49,30 @@ def _ssh(command):
     ], check=True)
 
 
+def _get_packs():
+    result = subprocess.run([
+        "gcloud", "compute", "ssh", INSTANCE,
+        f"--zone={ZONE}", f"--project={PROJECT}",
+        "--command=ls /opt/ | grep ^minecraft-", "--quiet"
+    ], capture_output=True, text=True)
+    folders = [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
+    return {f.removeprefix("minecraft-"): f"/opt/{f}" for f in folders}
+
+
+def _get_current_pack():
+    result = subprocess.run([
+        "gcloud", "compute", "ssh", INSTANCE,
+        f"--zone={ZONE}", f"--project={PROJECT}",
+        "--command=readlink /opt/minecraft", "--quiet"
+    ], capture_output=True, text=True)
+    target = result.stdout.strip()
+    return target.removeprefix("/opt/minecraft-") if target else None
+
+
+def _swap_pack(path):
+    _ssh(f"sudo ln -sfn {path} /opt/minecraft")
+
+
 def _stop_mc():
     try:
         _ssh("sudo screen -S minecraft -X stuff $'stop\\n'")
@@ -121,6 +145,94 @@ async def _restart_and_notify(channel: discord.TextChannel):
     await asyncio.to_thread(_start_mc)
     await _wait_for_port(ip, open=True)
     await channel.send(f"Minecraft server is back up! Connect to: **{ip}**")
+
+
+class SwapConfirmView(discord.ui.View):
+    def __init__(self, pack_name, pack_path, ip):
+        super().__init__(timeout=30)
+        self.pack_name = pack_name
+        self.pack_path = pack_path
+        self.ip = ip
+
+    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.stop()
+        await interaction.response.edit_message(content=f"Stopping Minecraft and switching to **{self.pack_name}**...", view=None)
+        await asyncio.to_thread(_stop_mc)
+        await _wait_for_port(self.ip, open=False)
+        await asyncio.to_thread(_swap_pack, self.pack_path)
+        await asyncio.to_thread(_start_mc)
+        await interaction.channel.send(f"Switched to **{self.pack_name}**. Starting server...")
+        await _wait_for_port(self.ip, open=True)
+        await interaction.channel.send(f"Minecraft is ready on **{self.pack_name}**! Connect to: **{self.ip}**")
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.stop()
+        await interaction.response.edit_message(content="Pack swap cancelled.", view=None)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+class PackSelect(discord.ui.Select):
+    def __init__(self, packs, current_pack):
+        options = [
+            discord.SelectOption(label=name, description=path)
+            for name, path in packs.items()
+            if name != current_pack
+        ]
+        super().__init__(placeholder="Choose a modpack...", options=options)
+        self.packs = packs
+        self.current_pack = current_pack
+
+    async def callback(self, interaction: discord.Interaction):
+        pack_name = self.values[0]
+        pack_path = self.packs[pack_name]
+        await interaction.response.defer()
+        vm_status = await asyncio.to_thread(_get_status)
+        if vm_status != "RUNNING":
+            await asyncio.to_thread(_swap_pack, pack_path)
+            await interaction.followup.send(f"Switched to **{pack_name}**. Start the server when ready.")
+            return
+        ip = await asyncio.to_thread(_get_ip)
+        mc_running = await asyncio.to_thread(_port_open, ip, MC_PORT)
+        if not mc_running:
+            await asyncio.to_thread(_swap_pack, pack_path)
+            await interaction.followup.send(f"Switched to **{pack_name}**. Use /startmc to start it.")
+            return
+        view = SwapConfirmView(pack_name, pack_path, ip)
+        await interaction.followup.send(
+            f"⚠️ Minecraft is currently running. Switching to **{pack_name}** will stop it. Continue?",
+            view=view
+        )
+
+
+class PackSelectView(discord.ui.View):
+    def __init__(self, packs, current_pack):
+        super().__init__()
+        self.add_item(PackSelect(packs, current_pack))
+
+
+@tree.command(name="switchpack", description="Switch the active modpack")
+async def switchpack(interaction: discord.Interaction):
+    await interaction.response.defer()
+    vm_status = await asyncio.to_thread(_get_status)
+    packs = await asyncio.to_thread(_get_packs)
+    if not packs:
+        await interaction.followup.send("No modpack folders found under /opt/minecraft-*")
+        return
+    current = await asyncio.to_thread(_get_current_pack)
+    if vm_status == "RUNNING":
+        current_line = f"Currently running: **{current}**\n" if current else ""
+    else:
+        current_line = f"Currently set to: **{current}**\n" if current else ""
+    if len(packs) == 1 and list(packs.keys())[0] == current:
+        await interaction.followup.send("Only one modpack is installed and it's already active.")
+        return
+    view = PackSelectView(packs, current)
+    await interaction.followup.send(f"{current_line}Select a modpack to switch to:", view=view)
 
 
 @tree.command(name="startmc", description="Start only the Minecraft server (VM must already be on)")
