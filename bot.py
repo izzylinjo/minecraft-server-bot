@@ -92,12 +92,16 @@ def _port_open(ip, port):
         return False
 
 
-async def _wait_for_port(ip, open: bool):
+async def _wait_for_port(ip, open: bool, timeout: int = None):
+    elapsed = 0
     while True:
         result = await asyncio.to_thread(_port_open, ip, MC_PORT)
         if result == open:
             break
+        if timeout is not None and elapsed >= timeout:
+            break
         await asyncio.sleep(5)
+        elapsed += 5
 
 
 async def _wait_for_vm_status(target: str):
@@ -111,15 +115,17 @@ async def _wait_for_vm_status(target: str):
 async def _start_and_notify(channel: discord.TextChannel):
     await _wait_for_vm_status("RUNNING")
     ip = await asyncio.to_thread(_get_ip)
-    await channel.send("VM is up! Starting Minecraft...")
+    pack = await asyncio.to_thread(_get_current_pack)
+    pack_label = f"**{pack}**" if pack else "Minecraft"
+    await channel.send(f"VM is up! Starting {pack_label}...")
     await asyncio.to_thread(_start_mc)
     await _wait_for_port(ip, open=True)
-    await channel.send(f"Minecraft server is ready! Connect to: **{ip}**")
+    await channel.send(f"{pack_label} is ready! Connect to: **{ip}**")
 
 
 async def _stop_and_notify(channel: discord.TextChannel):
     ip = await asyncio.to_thread(_get_ip)
-    await _wait_for_port(ip, open=False)
+    await _wait_for_port(ip, open=False, timeout=180)
     await channel.send("Minecraft stopped. Shutting down VM...")
     await asyncio.to_thread(_stop_vm)
     await _wait_for_vm_status("TERMINATED")
@@ -128,23 +134,27 @@ async def _stop_and_notify(channel: discord.TextChannel):
 
 async def _wait_mc_and_notify(channel: discord.TextChannel):
     ip = await asyncio.to_thread(_get_ip)
+    pack = await asyncio.to_thread(_get_current_pack)
+    pack_label = f"**{pack}**" if pack else "Minecraft"
     await _wait_for_port(ip, open=True)
-    await channel.send(f"Minecraft server is ready! Connect to: **{ip}**")
+    await channel.send(f"{pack_label} is ready! Connect to: **{ip}**")
 
 
 async def _wait_mc_stop_and_notify(channel: discord.TextChannel):
     ip = await asyncio.to_thread(_get_ip)
-    await _wait_for_port(ip, open=False)
+    await _wait_for_port(ip, open=False, timeout=180)
     await channel.send("Minecraft server stopped. VM is still running.")
 
 
 async def _restart_and_notify(channel: discord.TextChannel):
     ip = await asyncio.to_thread(_get_ip)
-    await _wait_for_port(ip, open=False)
-    await channel.send("Minecraft stopped. Starting it back up...")
+    pack = await asyncio.to_thread(_get_current_pack)
+    pack_label = f"**{pack}**" if pack else "Minecraft"
+    await _wait_for_port(ip, open=False, timeout=180)
+    await channel.send(f"Stopped. Starting {pack_label} back up...")
     await asyncio.to_thread(_start_mc)
     await _wait_for_port(ip, open=True)
-    await channel.send(f"Minecraft server is back up! Connect to: **{ip}**")
+    await channel.send(f"{pack_label} is back up! Connect to: **{ip}**")
 
 
 class SwapConfirmView(discord.ui.View):
@@ -159,7 +169,7 @@ class SwapConfirmView(discord.ui.View):
         self.stop()
         await interaction.response.edit_message(content=f"Stopping Minecraft and switching to **{self.pack_name}**...", view=None)
         await asyncio.to_thread(_stop_mc)
-        await _wait_for_port(self.ip, open=False)
+        await _wait_for_port(self.ip, open=False, timeout=180)
         await asyncio.to_thread(_swap_pack, self.pack_path)
         await asyncio.to_thread(_start_mc)
         await interaction.channel.send(f"Switched to **{self.pack_name}**. Starting server...")
@@ -286,8 +296,13 @@ async def stopserver(interaction: discord.Interaction):
     if status == "TERMINATED":
         await interaction.followup.send("Server is already stopped.")
         return
-    await asyncio.to_thread(_stop_mc)
-    await interaction.followup.send("Stopping Minecraft server... waiting for it to save.")
+    ip = await asyncio.to_thread(_get_ip)
+    mc_running = await asyncio.to_thread(_port_open, ip, MC_PORT)
+    if mc_running:
+        await asyncio.to_thread(_stop_mc)
+        await interaction.followup.send("Stopping Minecraft server... waiting for it to save.")
+    else:
+        await interaction.followup.send("Minecraft is already off. Shutting down VM...")
     asyncio.create_task(_stop_and_notify(interaction.channel))
 
 
