@@ -104,6 +104,13 @@ async def _wait_for_port(ip, open: bool, timeout: int = None):
         elapsed += 5
 
 
+async def _safe_send(channel, msg):
+    try:
+        await channel.send(msg)
+    except discord.HTTPException:
+        pass
+
+
 async def _wait_for_vm_status(target: str):
     while True:
         status = await asyncio.to_thread(_get_status)
@@ -117,19 +124,19 @@ async def _start_and_notify(channel: discord.TextChannel):
     ip = await asyncio.to_thread(_get_ip)
     pack = await asyncio.to_thread(_get_current_pack)
     pack_label = f"**{pack}**" if pack else "Minecraft"
-    await channel.send(f"VM is up! Starting {pack_label}...")
+    await _safe_send(channel, f"VM is up! Starting {pack_label}...")
     await asyncio.to_thread(_start_mc)
     await _wait_for_port(ip, open=True)
-    await channel.send(f"{pack_label} is ready! Connect to: **{ip}**")
+    await _safe_send(channel, f"{pack_label} is ready! Connect to: **{ip}**")
 
 
 async def _stop_and_notify(channel: discord.TextChannel):
     ip = await asyncio.to_thread(_get_ip)
     await _wait_for_port(ip, open=False, timeout=180)
-    await channel.send("Minecraft stopped. Shutting down VM...")
     await asyncio.to_thread(_stop_vm)
+    await _safe_send(channel, "Minecraft stopped. Shutting down VM...")
     await _wait_for_vm_status("TERMINATED")
-    await channel.send("Server is fully offline.")
+    await _safe_send(channel, "Server is fully offline.")
 
 
 async def _wait_mc_and_notify(channel: discord.TextChannel):
@@ -137,13 +144,13 @@ async def _wait_mc_and_notify(channel: discord.TextChannel):
     pack = await asyncio.to_thread(_get_current_pack)
     pack_label = f"**{pack}**" if pack else "Minecraft"
     await _wait_for_port(ip, open=True)
-    await channel.send(f"{pack_label} is ready! Connect to: **{ip}**")
+    await _safe_send(channel, f"{pack_label} is ready! Connect to: **{ip}**")
 
 
 async def _wait_mc_stop_and_notify(channel: discord.TextChannel):
     ip = await asyncio.to_thread(_get_ip)
     await _wait_for_port(ip, open=False, timeout=180)
-    await channel.send("Minecraft server stopped. VM is still running.")
+    await _safe_send(channel, "Minecraft server stopped. VM is still running.")
 
 
 async def _restart_and_notify(channel: discord.TextChannel):
@@ -151,10 +158,10 @@ async def _restart_and_notify(channel: discord.TextChannel):
     pack = await asyncio.to_thread(_get_current_pack)
     pack_label = f"**{pack}**" if pack else "Minecraft"
     await _wait_for_port(ip, open=False, timeout=180)
-    await channel.send(f"Stopped. Starting {pack_label} back up...")
     await asyncio.to_thread(_start_mc)
+    await _safe_send(channel, f"Stopped. Starting {pack_label} back up...")
     await _wait_for_port(ip, open=True)
-    await channel.send(f"{pack_label} is back up! Connect to: **{ip}**")
+    await _safe_send(channel, f"{pack_label} is back up! Connect to: **{ip}**")
 
 
 class SwapConfirmView(discord.ui.View):
