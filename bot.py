@@ -179,9 +179,9 @@ class SwapConfirmView(discord.ui.View):
         await _wait_for_port(self.ip, open=False, timeout=180)
         await asyncio.to_thread(_swap_pack, self.pack_path)
         await asyncio.to_thread(_start_mc)
-        await interaction.channel.send(f"Switched to **{self.pack_name}**. Starting server...")
+        await _safe_send(interaction.channel, f"Switched to **{self.pack_name}**. Starting server...")
         await _wait_for_port(self.ip, open=True)
-        await interaction.channel.send(f"Minecraft is ready on **{self.pack_name}**! Connect to: **{self.ip}**")
+        await _safe_send(interaction.channel, f"Minecraft is ready on **{self.pack_name}**! Connect to: **{self.ip}**")
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
