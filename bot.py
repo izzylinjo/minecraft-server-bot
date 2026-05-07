@@ -291,6 +291,9 @@ async def startserver(interaction: discord.Interaction):
     if status == "RUNNING":
         await interaction.followup.send("Server is already running.")
         return
+    if status in ("STAGING", "PROVISIONING"):
+        await interaction.followup.send("Server is already starting up, please wait.")
+        return
     await asyncio.to_thread(_start_vm)
     await interaction.followup.send("Starting server...")
     asyncio.create_task(_start_and_notify(interaction.channel))
@@ -302,6 +305,9 @@ async def stopserver(interaction: discord.Interaction):
     status = await asyncio.to_thread(_get_status)
     if status == "TERMINATED":
         await interaction.followup.send("Server is already stopped.")
+        return
+    if status == "STOPPING":
+        await interaction.followup.send("Server is already shutting down, please wait.")
         return
     ip = await asyncio.to_thread(_get_ip)
     mc_running = await asyncio.to_thread(_port_open, ip, MC_PORT)
